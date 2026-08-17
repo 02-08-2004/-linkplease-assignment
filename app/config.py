@@ -6,6 +6,14 @@ load_dotenv()
 PSEUDOGRAM_BASE_URL = os.getenv("PSEUDOGRAM_BASE_URL", "https://pseudogram-api.onrender.com")
 PSEUDOGRAM_API_KEY = os.getenv("PSEUDOGRAM_API_KEY", "")
 
+# The README says webhook signatures are HMAC'd with "your API key as the
+# secret", but that's not what actually happens: verified empirically by
+# capturing a real webhook body + its X-PseudoGram-Signature and brute-forcing
+# candidate secrets against it. The mock API signs with the account EMAIL
+# string, not the api_key token used for X-API-Key auth. Set this explicitly
+# rather than trying to derive it from the api_key.
+PSEUDOGRAM_WEBHOOK_SECRET = os.getenv("PSEUDOGRAM_WEBHOOK_SECRET", "")
+
 DB_PATH = os.getenv("DB_PATH", "linkplease.db")
 
 # Mock API rate limit: 10 requests / rolling 60s
