@@ -14,6 +14,8 @@ log = logging.getLogger("linkplease")
 
 app = FastAPI(title="LinkPlease")
 
+_CAPTURED_ONCE = False  # TEMP DEBUG flag, remove before final submission
+
 
 @app.on_event("startup")
 async def startup():
@@ -45,6 +47,20 @@ async def webhook(request: Request):
         ).hexdigest()
         expected_header = f"sha256={expected}"
         if not hmac.compare_digest(expected_header, sig_header):
+            # TEMP DEBUG — remove before final submission. One-shot full
+            # capture (body + signature) so the mismatch can be brute-forced
+            # offline against the exact bytes actually received.
+            global _CAPTURED_ONCE
+            if not _CAPTURED_ONCE:
+                _CAPTURED_ONCE = True
+                import base64
+                log.warning(
+                    "SIG_CAPTURE full_body_b64=%s received_sig=%s expected_sig=%s key_len=%d",
+                    base64.b64encode(raw_body).decode(),
+                    sig_header,
+                    expected_header,
+                    len(PSEUDOGRAM_API_KEY),
+                )
             # Return 200 anyway? No — a forged request should be rejected.
             # We still respond fast; rejection doesn't require background work.
             raise HTTPException(status_code=401, detail="invalid signature")
