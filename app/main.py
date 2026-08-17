@@ -45,8 +45,17 @@ async def webhook(request: Request):
         ).hexdigest()
         expected_header = f"sha256={expected}"
         if not hmac.compare_digest(expected_header, sig_header):
-            # Return 200 anyway? No — a forged request should be rejected.
-            # We still respond fast; rejection doesn't require background work.
+            # TEMP DEBUG — remove before final submission. Logs enough to
+            # diagnose a signature mismatch without leaking the full secret.
+            log.warning(
+                "SIG MISMATCH key_len=%d key_prefix=%s received=%r expected=%r body_len=%d body_prefix=%r",
+                len(PSEUDOGRAM_API_KEY),
+                PSEUDOGRAM_API_KEY[:6],
+                sig_header,
+                expected_header,
+                len(raw_body),
+                raw_body[:80],
+            )
             raise HTTPException(status_code=401, detail="invalid signature")
 
     try:
