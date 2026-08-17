@@ -5,6 +5,7 @@ load_dotenv()
 
 PSEUDOGRAM_BASE_URL = os.getenv("PSEUDOGRAM_BASE_URL", "https://pseudogram-api.onrender.com")
 PSEUDOGRAM_API_KEY = os.getenv("PSEUDOGRAM_API_KEY", "")
+PSEUDOGRAM_WEBHOOK_SECRET = os.getenv("PSEUDOGRAM_WEBHOOK_SECRET", "") 
 
 # The README says webhook signatures are HMAC'd with "your API key as the
 # secret", but that's not what actually happens: verified empirically by
