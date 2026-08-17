@@ -7,14 +7,12 @@ from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 
 from app import db, worker, client
-from app.config import PSEUDOGRAM_API_KEY
+from app.config import PSEUDOGRAM_API_KEY, PSEUDOGRAM_WEBHOOK_SECRET
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("linkplease")
 
 app = FastAPI(title="LinkPlease")
-
-_CAPTURED_ONCE = False  # TEMP DEBUG flag, remove before final submission
 
 
 @app.on_event("startup")
@@ -40,27 +38,18 @@ async def webhook(request: Request):
     raw_body = await request.body()
 
     # --- Part B: verify signature, reject forged requests ---
+    # NOTE: despite the README saying "using your API key as the secret",
+    # empirically (confirmed by capturing a real webhook body + signature
+    # and brute-forcing candidate secrets against it) the mock API actually
+    # signs with the account EMAIL, not the full api_key token. See
+    # PSEUDOGRAM_WEBHOOK_SECRET in config.py.
     sig_header = request.headers.get("X-PseudoGram-Signature", "")
-    if PSEUDOGRAM_API_KEY:
+    if PSEUDOGRAM_WEBHOOK_SECRET:
         expected = hmac.new(
-            PSEUDOGRAM_API_KEY.encode(), raw_body, hashlib.sha256
+            PSEUDOGRAM_WEBHOOK_SECRET.encode(), raw_body, hashlib.sha256
         ).hexdigest()
         expected_header = f"sha256={expected}"
         if not hmac.compare_digest(expected_header, sig_header):
-            # TEMP DEBUG — remove before final submission. One-shot full
-            # capture (body + signature) so the mismatch can be brute-forced
-            # offline against the exact bytes actually received.
-            global _CAPTURED_ONCE
-            if not _CAPTURED_ONCE:
-                _CAPTURED_ONCE = True
-                import base64
-                log.warning(
-                    "SIG_CAPTURE full_body_b64=%s received_sig=%s expected_sig=%s key_len=%d",
-                    base64.b64encode(raw_body).decode(),
-                    sig_header,
-                    expected_header,
-                    len(PSEUDOGRAM_API_KEY),
-                )
             # Return 200 anyway? No — a forged request should be rejected.
             # We still respond fast; rejection doesn't require background work.
             raise HTTPException(status_code=401, detail="invalid signature")
@@ -165,14 +154,3 @@ async def stats():
 @app.get("/health")
 async def health():
     return {"ok": True}
-
-
-# TEMP DEBUG — remove before final submission.
-@app.get("/debug/key-fingerprint")
-async def debug_key_fingerprint():
-    return {
-        "key_len": len(PSEUDOGRAM_API_KEY),
-        "key_sha256_prefix": hashlib.sha256(PSEUDOGRAM_API_KEY.encode()).hexdigest()[:12],
-        "key_repr_first_10": repr(PSEUDOGRAM_API_KEY[:10]),
-        "key_repr_last_10": repr(PSEUDOGRAM_API_KEY[-10:]),
-    }
