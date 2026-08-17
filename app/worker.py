@@ -180,7 +180,7 @@ async def send_loop_tick():
 
 async def _attempt_send(row):
   rule_id, user_id, comment_id = row["rule_id"], row["user_id"], row["comment_id"]
-send_idem_key = f"{row['idempotency_key']}:{row['attempts']}"
+  send_idem_key = f"{row['idempotency_key']}:{row['attempts']}"
     async with db.write() as conn:
         cur = await conn.execute("SELECT dm_message FROM rules WHERE rule_id=?", (rule_id,))
         r = await cur.fetchone()
