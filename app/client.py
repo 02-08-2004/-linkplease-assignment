@@ -86,7 +86,7 @@ async def send_dm(recipient_user_id: str, message: str, comment_id: str,
     except httpx.RequestError as e:
         return SendResult("retryable_error", detail=f"network error: {e}")
 
-    if resp.status_code == 202:
+    if resp.status_code in (200, 202):
         data = resp.json()
         return SendResult("queued", dm_id=data.get("dm_id"))
     if resp.status_code == 429:

@@ -17,10 +17,10 @@ Pipeline:
 Crash recovery: nothing here depends on in-memory state surviving a
 restart. On boot we re-scan events.status='pending' and
 dm_attempts.status in ('pending_send','queued') and pick up where we left
-off. The idempotency key on every dm_attempts row is derived from
-(rule_id, user_id), so even if we retry a send that actually already went
-through server-side, the mock API's Idempotency-Key handling returns the
-original dm_id instead of sending twice.
+off. The idempotency key stored on every dm_attempts row is derived from
+(rule_id, user_id) and is our own dedup guarantee (never DM the same user
+twice for the same rule). It is deliberately NOT the same value sent to
+PseudoGram on every physical send attempt — see _attempt_send for why.
 """
 import asyncio
 import time
@@ -180,7 +180,17 @@ async def send_loop_tick():
 
 async def _attempt_send(row):
     rule_id, user_id, comment_id = row["rule_id"], row["user_id"], row["comment_id"]
-    idem_key = row["idempotency_key"]
+
+    # row["idempotency_key"] (rule_id:user_id) is OUR dedup guarantee — the
+    # DB UNIQUE constraint that stops us claiming this user twice for this
+    # rule. It must NOT also be what we send to PseudoGram on every retry:
+    # PseudoGram caches responses per Idempotency-Key and replays the
+    # original dm_id instead of re-sending, so reusing it on a retry after a
+    # downstream failure just re-fetches the same cached failed dm_id
+    # forever instead of actually attempting delivery again. Each physical
+    # send attempt gets its own key; row["attempts"] (0 on first send) makes
+    # that reproducible from DB state alone after a crash.
+    send_idem_key = f"{row['idempotency_key']}:{row['attempts']}"
 
     async with db.write() as conn:
         cur = await conn.execute("SELECT dm_message FROM rules WHERE rule_id=?", (rule_id,))
@@ -194,7 +204,7 @@ async def _attempt_send(row):
             )
         return
 
-    result = await client.send_dm(user_id, r["dm_message"], comment_id, idem_key)
+    result = await client.send_dm(user_id, r["dm_message"], comment_id, send_idem_key)
     now = time.time()
 
     async with db.write() as conn:
@@ -267,9 +277,10 @@ async def reconcile_tick():
                     )
                 else:
                     # Server accepted it, then it failed downstream. Retry
-                    # the send — same idempotency key, so if the API's
-                    # dedup window has expired this legitimately sends a
-                    # fresh attempt.
+                    # the send — _attempt_send derives a fresh per-attempt
+                    # idempotency key from the updated attempts count, so
+                    # this is a genuine new send, not a replay of the
+                    # cached failed response.
                     backoff = min(BASE_BACKOFF_SECONDS * (2 ** attempts), MAX_BACKOFF_SECONDS)
                     await conn2.execute(
                         "UPDATE dm_attempts SET status='pending_send', dm_id=NULL, "
